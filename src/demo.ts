@@ -1,0 +1,101 @@
+import type { Note, Vault } from './types';
+
+const now = Date.now();
+
+const seed: Omit<Note, 'createdAt' | 'updatedAt'>[] = [
+  {
+    id: 'n-inbox',
+    title: 'Inbox',
+    body: 'Capture anything new here, then sort into projects.\n\nLinks: [[This Week]], [[Someday]]',
+    status: 'todo',
+    priority: 'medium',
+    due: '',
+    tags: ['meta'],
+  },
+  {
+    id: 'n-this-week',
+    title: 'This Week',
+    body: 'Plan for the current week.\n\n- [[Ship graph view]]\n- [[Write up notes on Obsidian]]\n- [[Pay rent]]',
+    status: 'doing',
+    priority: 'high',
+    due: '',
+    tags: ['meta', 'weekly'],
+  },
+  {
+    id: 'n-someday',
+    title: 'Someday',
+    body: 'Things I might want to do but not now. Linked from [[Inbox]].\n\n- [[Learn Rust seriously]]\n- [[Photo trip]]',
+    status: 'someday',
+    priority: 'low',
+    due: '',
+    tags: ['meta'],
+  },
+  {
+    id: 'n-graph',
+    title: 'Ship graph view',
+    body: 'Rewrite the app into an Obsidian-style graph view of personal tasks.\n\nBlocked by [[Decide on data model]]. Part of [[This Week]].',
+    status: 'doing',
+    priority: 'urgent',
+    due: '',
+    tags: ['project', 'projectgraph'],
+  },
+  {
+    id: 'n-data-model',
+    title: 'Decide on data model',
+    body: 'Notes are the source of truth, edges are derived from [[wikilinks]]. Tags are flat strings.',
+    status: 'done',
+    priority: 'high',
+    due: '',
+    tags: ['project', 'projectgraph'],
+  },
+  {
+    id: 'n-obsidian',
+    title: 'Write up notes on Obsidian',
+    body: 'Things I like about the graph view:\n- force layout with smooth physics\n- hover highlights neighbors\n- minimal chrome\n\nMentioned in [[This Week]].',
+    status: 'todo',
+    priority: 'medium',
+    due: '',
+    tags: ['writing'],
+  },
+  {
+    id: 'n-rent',
+    title: 'Pay rent',
+    body: 'Recurring. Set a reminder. Linked from [[This Week]].',
+    status: 'todo',
+    priority: 'high',
+    due: '',
+    tags: ['life'],
+  },
+  {
+    id: 'n-rust',
+    title: 'Learn Rust seriously',
+    body: 'Work through the book. See [[Someday]].',
+    status: 'someday',
+    priority: 'low',
+    due: '',
+    tags: ['learning'],
+  },
+  {
+    id: 'n-photo',
+    title: 'Photo trip',
+    body: 'Weekend trip with the camera. See [[Someday]].',
+    status: 'someday',
+    priority: 'low',
+    due: '',
+    tags: ['fun'],
+  },
+  {
+    id: 'n-blocker',
+    title: 'Stuck on cache invalidation',
+    body: 'A long-standing puzzle. Blocked.',
+    status: 'blocked',
+    priority: 'medium',
+    due: '',
+    tags: ['project'],
+  },
+];
+
+export const demoVault: Vault = {
+  notes: Object.fromEntries(seed.map((n) => [n.id, { ...n, createdAt: now, updatedAt: now }])),
+  order: seed.map((n) => n.id),
+};
