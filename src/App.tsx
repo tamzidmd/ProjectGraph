@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import ReactFlow, { Background, Controls, MiniMap, type NodeMouseHandler } from '@xyflow/react';
+import { ReactFlow, Background, Controls, MiniMap, type EdgeMouseHandler, type NodeMouseHandler } from '@xyflow/react';
 import { forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force';
 import { useTaskMeshStore } from './store/useTaskMeshStore';
 import type { TaskMeshProject } from './types/taskmesh';
@@ -37,6 +37,7 @@ export default function App() {
   }, []);
 
   const onNodeClick: NodeMouseHandler = (_, node) => s.selectNode(node.id);
+  const onEdgeClick: EdgeMouseHandler = (_, edge) => s.selectEdge(edge.id);
 
   return <div className="app"><aside>{nodeKinds.map((k) => <button key={k} onClick={() => s.addNode(k)}>{`Add ${k[0].toUpperCase()}${k.slice(1)}`}</button>)}
   <button onClick={() => s.setEdgeMode(!s.settings.edgeMode)}>Add Edge mode: {s.settings.edgeMode ? 'On' : 'Off'}</button>
@@ -45,7 +46,7 @@ export default function App() {
   <button onClick={s.resetDemo}>Reset Demo</button></aside>
   <main><ReactFlow nodes={s.nodes.map((n) => ({ ...n, className: `${n.data.status === 'blocked' ? 'blocked' : ''} ${['done','archived'].includes(n.data.status) ? 'muted' : ''} ${neighbors.has(n.id) ? 'connected' : ''}` }))} edges={s.edges}
     onNodesChange={s.onNodesChange} onEdgesChange={s.onEdgesChange} onConnect={s.settings.edgeMode ? s.connectNodes : undefined} onNodeClick={onNodeClick}
-    onEdgeClick={(_, e) => s.selectEdge(e.id)} onPaneClick={() => { s.selectNode(); s.selectEdge(); }} fitView>
+    onEdgeClick={onEdgeClick} onPaneClick={() => { s.selectNode(); s.selectEdge(); }} fitView>
     <Background /><MiniMap /><Controls /></ReactFlow></main>
   <aside>{selectedNode && <div><h3>Node Inspector</h3><input value={selectedNode.data.title} onChange={(e) => s.updateNode(selectedNode.id, { title: e.target.value })} />
   <textarea value={selectedNode.data.description} onChange={(e) => s.updateNode(selectedNode.id, { description: e.target.value })} />

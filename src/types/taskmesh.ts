@@ -5,7 +5,7 @@ export type NodeStatus = 'not_started' | 'active' | 'blocked' | 'done' | 'archiv
 export type NodePriority = 'low' | 'medium' | 'high' | 'critical';
 export type EdgeType = 'blocks' | 'enables' | 'depends_on' | 'relates_to' | 'informs' | 'resolves';
 
-export interface TaskMeshNodeData {
+export type TaskMeshNodeData = {
   title: string;
   description: string;
   type: NodeType;
@@ -14,13 +14,13 @@ export interface TaskMeshNodeData {
   owner: string;
   dueDate: string;
   tags: string[];
-}
+} & Record<string, unknown>;
 
-export interface TaskMeshEdgeData {
+export type TaskMeshEdgeData = {
   type: EdgeType;
   label: string;
   description: string;
-}
+} & Record<string, unknown>;
 
 export type TaskMeshNode = Node<TaskMeshNodeData>;
 export type TaskMeshEdge = Edge<TaskMeshEdgeData>;
