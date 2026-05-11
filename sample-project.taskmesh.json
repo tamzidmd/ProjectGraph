@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    { "data": { "id": "n1", "title": "Scope project", "description": "Define boundaries", "type": "task", "status": "active", "priority": "high", "owner": "Alex", "dueDate": "", "tags": "planning" }, "position": { "x": 100, "y": 100 } },
+    { "data": { "id": "n2", "title": "Decision: API version", "description": "Choose stable API", "type": "decision", "status": "not_started", "priority": "medium", "owner": "Sam", "dueDate": "", "tags": "architecture" }, "position": { "x": 340, "y": 120 } },
+    { "data": { "id": "n3", "title": "Integration risk", "description": "Vendor changes", "type": "risk", "status": "blocked", "priority": "critical", "owner": "Nora", "dueDate": "", "tags": "risk" }, "position": { "x": 220, "y": 280 } }
+  ],
+  "edges": [
+    { "data": { "id": "e1", "source": "n3", "target": "n2", "type": "blocks", "label": "blocks", "description": "Pending mitigation" } },
+    { "data": { "id": "e2", "source": "n2", "target": "n1", "type": "informs", "label": "informs", "description": "Decision informs scope" } }
+  ]
+}
