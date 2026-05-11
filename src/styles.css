@@ -1,0 +1,12 @@
+:root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body, #root { margin: 0; height: 100vh; background: #111827; color: #d1d5db; }
+.app { display: grid; grid-template-columns: 220px 1fr 280px; height: 100%; }
+aside { background: #0b1220; padding: 12px; display: flex; flex-direction: column; gap: 8px; border-right: 1px solid #1f2937; }
+aside:last-child { border-right: 0; border-left: 1px solid #1f2937; }
+button, input, textarea, select { background: #1f2937; color: #e5e7eb; border: 1px solid #374151; border-radius: 8px; padding: 8px; }
+.import input { display: none; }
+main { height: 100%; }
+.blocked { border: 2px solid #ef4444 !important; }
+.muted { opacity: 0.5; }
+.connected { box-shadow: 0 0 0 2px #60a5fa; }
