@@ -4,6 +4,14 @@ import type { Note, Priority, Status, Vault } from './types';
 
 const KEY = 'projectgraph-vault-v1';
 
+export type Direction = 'LR' | 'TB';
+
+interface LayoutSettings {
+  direction: Direction;
+  nodeSep: number;
+  rankSep: number;
+}
+
 interface Forces {
   charge: number;
   linkDistance: number;
@@ -17,10 +25,13 @@ interface UIState {
   activeTag?: string;
   hideStatuses: Status[];
   showOrphans: boolean;
-  live: boolean;
+  physics: boolean;
+  layout: LayoutSettings;
   forces: Forces;
+  layoutNonce: number;
 }
 
+const defaultLayout: LayoutSettings = { direction: 'LR', nodeSep: 30, rankSep: 110 };
 const defaultForces: Forces = { charge: -240, linkDistance: 90, collide: 28, center: 0.04 };
 
 const defaultUI: UIState = {
@@ -29,8 +40,10 @@ const defaultUI: UIState = {
   activeTag: undefined,
   hideStatuses: [],
   showOrphans: true,
-  live: true,
+  physics: false,
+  layout: defaultLayout,
   forces: defaultForces,
+  layoutNonce: 0,
 };
 
 interface State extends Vault, UIState {
@@ -42,9 +55,12 @@ interface State extends Vault, UIState {
   setActiveTag: (tag?: string) => void;
   toggleHideStatus: (s: Status) => void;
   setShowOrphans: (v: boolean) => void;
-  setLive: (v: boolean) => void;
+  setPhysics: (v: boolean) => void;
+  setLayout: <K extends keyof LayoutSettings>(key: K, value: LayoutSettings[K]) => void;
+  resetLayout: () => void;
   setForce: <K extends keyof Forces>(key: K, value: Forces[K]) => void;
   resetForces: () => void;
+  relayout: () => void;
   importVault: (v: Vault) => void;
   exportVault: () => Vault;
   resetDemo: () => void;
@@ -139,9 +155,12 @@ export const useStore = create<State>((set, get) => {
         return { hideStatuses: has ? state.hideStatuses.filter((x) => x !== s) : [...state.hideStatuses, s] };
       }),
     setShowOrphans: (v) => set({ showOrphans: v }),
-    setLive: (v) => set({ live: v }),
+    setPhysics: (v) => set({ physics: v }),
+    setLayout: (key, value) => set((s) => ({ layout: { ...s.layout, [key]: value } })),
+    resetLayout: () => set({ layout: defaultLayout }),
     setForce: (key, value) => set((s) => ({ forces: { ...s.forces, [key]: value } })),
     resetForces: () => set({ forces: defaultForces }),
+    relayout: () => set((s) => ({ layoutNonce: s.layoutNonce + 1 })),
     importVault: (v) => {
       const notes = v.notes ?? {};
       const order = v.order && v.order.length ? v.order.filter((id) => notes[id]) : Object.keys(notes);

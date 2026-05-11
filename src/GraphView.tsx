@@ -4,6 +4,7 @@ import {
   BackgroundVariant,
   Controls,
   Handle,
+  MarkerType,
   Position,
   ReactFlow,
   useEdgesState,
@@ -15,6 +16,7 @@ import {
   type NodeProps,
   type OnNodeDrag,
 } from '@xyflow/react';
+import dagre from 'dagre';
 import {
   forceCenter,
   forceCollide,
@@ -25,9 +27,9 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from 'd3-force';
-import { useStore, filterNotes } from './store';
+import { useStore, filterNotes, type Direction } from './store';
 import { deriveGraph } from './wikilinks';
-import type { Status } from './types';
+import type { Priority, Status } from './types';
 
 interface SimNode extends SimulationNodeDatum {
   id: string;
@@ -37,12 +39,19 @@ type SimLink = SimulationLinkDatum<SimNode>;
 type NodeData = {
   title: string;
   status: Status;
+  priority: Priority;
   degree: number;
   dim: boolean;
   glow: boolean;
+  direction: Direction;
+  physics: boolean;
 };
 
 type RFNode = Node<NodeData>;
+
+const NODE_W = 200;
+const NODE_H = 44;
+const DOT_R = 6;
 
 const STATUS_COLOR: Record<Status, string> = {
   todo: '#8b949e',
@@ -52,29 +61,85 @@ const STATUS_COLOR: Record<Status, string> = {
   someday: '#a371f7',
 };
 
-const GraphNode = memo(({ data, selected }: NodeProps<RFNode>) => {
-  const size = Math.max(12, Math.min(48, 12 + data.degree * 3));
+const PRIORITY_GLYPH: Record<Priority, string> = {
+  low: '',
+  medium: '',
+  high: '↑',
+  urgent: '!',
+};
+
+const FlowNode = memo(({ data, selected }: NodeProps<RFNode>) => {
   const color = STATUS_COLOR[data.status];
+  const isLR = data.direction === 'LR';
+  if (data.physics) {
+    const r = Math.max(10, Math.min(28, 10 + data.degree * 2));
+    return (
+      <div className={`pnode ${data.dim ? 'dim' : ''} ${data.glow ? 'glow' : ''} ${selected ? 'sel' : ''}`}>
+        <Handle type="target" position={Position.Top} className="ghandle" isConnectable={false} />
+        <div
+          className="pdot"
+          style={{
+            width: r * 2,
+            height: r * 2,
+            background: color,
+            boxShadow: selected || data.glow ? `0 0 0 2px ${color}66, 0 0 18px ${color}55` : undefined,
+          }}
+        />
+        <div className="plabel">{data.title}</div>
+        <Handle type="source" position={Position.Bottom} className="ghandle" isConnectable={false} />
+      </div>
+    );
+  }
   return (
-    <div className={`gnode ${data.dim ? 'dim' : ''} ${data.glow ? 'glow' : ''} ${selected ? 'sel' : ''}`}>
-      <Handle type="target" position={Position.Top} className="ghandle" isConnectable={false} />
-      <div
-        className="gdot"
-        style={{
-          width: size,
-          height: size,
-          background: color,
-          boxShadow: selected || data.glow ? `0 0 0 2px ${color}66, 0 0 18px ${color}55` : undefined,
-        }}
+    <div
+      className={`fnode status-${data.status} ${data.dim ? 'dim' : ''} ${data.glow ? 'glow' : ''} ${selected ? 'sel' : ''}`}
+      style={{ width: NODE_W, height: NODE_H, borderLeftColor: color }}
+    >
+      <Handle
+        type="target"
+        position={isLR ? Position.Left : Position.Top}
+        className="ghandle"
+        isConnectable={false}
       />
-      <div className="glabel">{data.title}</div>
-      <Handle type="source" position={Position.Bottom} className="ghandle" isConnectable={false} />
+      <span className="fdot" style={{ background: color, width: DOT_R * 2, height: DOT_R * 2 }} />
+      <span className="ftitle">{data.title}</span>
+      {data.priority !== 'low' && data.priority !== 'medium' && (
+        <span className={`fpri pri-${data.priority}`}>{PRIORITY_GLYPH[data.priority]}</span>
+      )}
+      <Handle
+        type="source"
+        position={isLR ? Position.Right : Position.Bottom}
+        className="ghandle"
+        isConnectable={false}
+      />
     </div>
   );
 });
-GraphNode.displayName = 'GraphNode';
+FlowNode.displayName = 'FlowNode';
 
-const nodeTypes = { graph: GraphNode };
+const nodeTypes = { flow: FlowNode };
+
+function dagreLayout(
+  nodes: { id: string }[],
+  edges: { id: string; source: string; target: string }[],
+  direction: Direction,
+  nodeSep: number,
+  rankSep: number,
+): Map<string, { x: number; y: number }> {
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: direction, nodesep: nodeSep, ranksep: rankSep, marginx: 20, marginy: 20 });
+  g.setDefaultEdgeLabel(() => ({}));
+  for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: NODE_H });
+  for (const e of edges) g.setEdge(e.source, e.target);
+  dagre.layout(g);
+  const out = new Map<string, { x: number; y: number }>();
+  for (const n of nodes) {
+    const node = g.node(n.id);
+    if (!node) continue;
+    out.set(n.id, { x: node.x - NODE_W / 2, y: node.y - NODE_H / 2 });
+  }
+  return out;
+}
 
 export function GraphView() {
   const notes = useStore((s) => s.notes);
@@ -84,8 +149,10 @@ export function GraphView() {
   const hideStatuses = useStore((s) => s.hideStatuses);
   const showOrphans = useStore((s) => s.showOrphans);
   const selectedId = useStore((s) => s.selectedId);
-  const live = useStore((s) => s.live);
+  const physics = useStore((s) => s.physics);
+  const layout = useStore((s) => s.layout);
   const forces = useStore((s) => s.forces);
+  const layoutNonce = useStore((s) => s.layoutNonce);
   const setSelected = useStore((s) => s.setSelected);
 
   const visibleNotes = useMemo(
@@ -117,11 +184,23 @@ export function GraphView() {
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<RFNode>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
+  const { fitView } = useReactFlow();
   const simRef = useRef<Simulation<SimNode, SimLink> | null>(null);
   const simNodesRef = useRef<Map<string, SimNode>>(new Map());
-  const { fitView } = useReactFlow();
+  const positionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+
+  const structuralKey = useMemo(() => {
+    const nodeIds = finalNotes.map((n) => n.id).sort().join(',');
+    const edgeKeys = finalEdges.map((e) => e.id).sort().join(',');
+    return `${nodeIds}|${edgeKeys}`;
+  }, [finalNotes, finalEdges]);
 
   useEffect(() => {
+    if (!physics) {
+      simRef.current?.stop();
+      simRef.current = null;
+      return;
+    }
     const sim = forceSimulation<SimNode, SimLink>([])
       .force('charge', forceManyBody<SimNode>())
       .force('link', forceLink<SimNode, SimLink>().id((d) => d.id))
@@ -129,13 +208,13 @@ export function GraphView() {
       .force('center', forceCenter<SimNode>(0, 0))
       .alphaDecay(0.035)
       .velocityDecay(0.45);
-
     sim.on('tick', () => {
       const positions = simNodesRef.current;
       setRfNodes((prev) =>
         prev.map((n) => {
           const p = positions.get(n.id);
           if (!p || p.x == null || p.y == null) return n;
+          positionsRef.current.set(n.id, { x: p.x, y: p.y });
           return { ...n, position: { x: p.x, y: p.y } };
         }),
       );
@@ -145,46 +224,54 @@ export function GraphView() {
       sim.stop();
       simRef.current = null;
     };
-  }, [setRfNodes]);
+  }, [physics, setRfNodes]);
 
   useEffect(() => {
-    const sim = simRef.current;
-    if (!sim) return;
-
-    const prev = simNodesRef.current;
-    const next = new Map<string, SimNode>();
-    const spread = Math.max(40, Math.sqrt(finalNotes.length) * 30);
-    for (const n of finalNotes) {
-      const existing = prev.get(n.id);
-      if (existing) {
-        next.set(n.id, existing);
-      } else {
-        next.set(n.id, {
-          id: n.id,
-          x: (Math.random() - 0.5) * spread,
-          y: (Math.random() - 0.5) * spread,
-        });
+    if (physics) {
+      const sim = simRef.current;
+      if (!sim) return;
+      const prev = simNodesRef.current;
+      const next = new Map<string, SimNode>();
+      const spread = Math.max(40, Math.sqrt(finalNotes.length) * 30);
+      for (const n of finalNotes) {
+        const existing = prev.get(n.id);
+        if (existing) {
+          next.set(n.id, existing);
+        } else {
+          const seed = positionsRef.current.get(n.id);
+          next.set(n.id, {
+            id: n.id,
+            x: seed?.x ?? (Math.random() - 0.5) * spread,
+            y: seed?.y ?? (Math.random() - 0.5) * spread,
+          });
+        }
       }
+      simNodesRef.current = next;
+      sim.nodes([...next.values()]);
+      const linkForce = sim.force<ReturnType<typeof forceLink<SimNode, SimLink>>>('link');
+      if (linkForce) linkForce.links(finalEdges.map((e) => ({ source: e.source, target: e.target })));
+      sim.alpha(0.9).alphaTarget(0.05).restart();
+    } else {
+      const positions = dagreLayout(finalNotes, finalEdges, layout.direction, layout.nodeSep, layout.rankSep);
+      for (const [id, p] of positions) positionsRef.current.set(id, p);
     }
-    simNodesRef.current = next;
-
-    sim.nodes([...next.values()]);
-    const linkForce = sim.force<ReturnType<typeof forceLink<SimNode, SimLink>>>('link');
-    if (linkForce) linkForce.links(finalEdges.map((e) => ({ source: e.source, target: e.target })));
 
     setRfNodes(
       finalNotes.map((n) => {
-        const p = next.get(n.id)!;
+        const p = positionsRef.current.get(n.id) ?? { x: 0, y: 0 };
         return {
           id: n.id,
-          type: 'graph',
-          position: { x: p.x ?? 0, y: p.y ?? 0 },
+          type: 'flow',
+          position: p,
           data: {
             title: n.title,
             status: n.status,
+            priority: n.priority,
             degree: derived.degree.get(n.id) ?? 0,
             dim: !!neighborhood && !neighborhood.has(n.id),
             glow: !!neighborhood && neighborhood.has(n.id) && n.id !== selectedId,
+            direction: layout.direction,
+            physics,
           },
         };
       }),
@@ -192,25 +279,48 @@ export function GraphView() {
 
     setRfEdges(
       finalEdges.map((e) => {
-        const hot = neighborhood && (neighborhood.has(e.source) || neighborhood.has(e.target));
+        const hot = !!neighborhood && (neighborhood.has(e.source) || neighborhood.has(e.target));
+        const stroke = hot ? '#c9d1d9' : '#3a4250';
         return {
           id: e.id,
           source: e.source,
           target: e.target,
-          type: 'straight',
+          type: physics ? 'straight' : 'smoothstep',
           style: {
-            stroke: hot ? '#c9d1d9' : '#30363d',
-            strokeWidth: hot ? 1.5 : 1,
-            opacity: neighborhood && !hot ? 0.18 : 0.7,
+            stroke,
+            strokeWidth: hot ? 1.6 : 1.1,
+            opacity: neighborhood && !hot ? 0.2 : 0.85,
           },
+          markerEnd: physics
+            ? undefined
+            : { type: MarkerType.ArrowClosed, color: stroke, width: 14, height: 14 },
         };
       }),
     );
 
-    sim.alpha(0.9).restart();
-  }, [finalNotes, finalEdges, derived.degree, neighborhood, selectedId, setRfNodes, setRfEdges]);
+    const t = setTimeout(() => {
+      if (!physics) fitView({ duration: 350, padding: 0.2 });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [
+    physics,
+    structuralKey,
+    layout.direction,
+    layout.nodeSep,
+    layout.rankSep,
+    layoutNonce,
+    neighborhood,
+    selectedId,
+    derived.degree,
+    fitView,
+    finalNotes,
+    finalEdges,
+    setRfNodes,
+    setRfEdges,
+  ]);
 
   useEffect(() => {
+    if (!physics) return;
     const sim = simRef.current;
     if (!sim) return;
     (sim.force('charge') as ReturnType<typeof forceManyBody<SimNode>>).strength(forces.charge);
@@ -219,18 +329,13 @@ export function GraphView() {
     const linkForce = sim.force<ReturnType<typeof forceLink<SimNode, SimLink>>>('link');
     if (linkForce) linkForce.distance(forces.linkDistance);
     sim.alpha(Math.max(sim.alpha(), 0.6)).restart();
-  }, [forces.charge, forces.collide, forces.center, forces.linkDistance]);
-
-  useEffect(() => {
-    const sim = simRef.current;
-    if (!sim) return;
-    sim.alphaTarget(live ? 0.05 : 0).restart();
-  }, [live]);
+  }, [physics, forces.charge, forces.collide, forces.center, forces.linkDistance]);
 
   const onNodeClick: NodeMouseHandler = (_, node) => setSelected(node.id);
   const onPaneClick = () => setSelected(undefined);
 
   const onNodeDragStart: OnNodeDrag = (_, node) => {
+    if (!physics) return;
     const s = simNodesRef.current.get(node.id);
     if (!s) return;
     s.fx = node.position.x;
@@ -238,23 +343,26 @@ export function GraphView() {
     simRef.current?.alphaTarget(0.3).restart();
   };
   const onNodeDrag: OnNodeDrag = (_, node) => {
-    const s = simNodesRef.current.get(node.id);
-    if (!s) return;
-    s.fx = node.position.x;
-    s.fy = node.position.y;
+    if (physics) {
+      const s = simNodesRef.current.get(node.id);
+      if (!s) return;
+      s.fx = node.position.x;
+      s.fy = node.position.y;
+    } else {
+      positionsRef.current.set(node.id, { x: node.position.x, y: node.position.y });
+    }
   };
   const onNodeDragStop: OnNodeDrag = (_, node) => {
-    const s = simNodesRef.current.get(node.id);
-    if (!s) return;
-    s.fx = null;
-    s.fy = null;
-    simRef.current?.alphaTarget(live ? 0.05 : 0);
+    if (physics) {
+      const s = simNodesRef.current.get(node.id);
+      if (!s) return;
+      s.fx = null;
+      s.fy = null;
+      simRef.current?.alphaTarget(0.05);
+    } else {
+      positionsRef.current.set(node.id, { x: node.position.x, y: node.position.y });
+    }
   };
-
-  useEffect(() => {
-    const t = setTimeout(() => fitView({ duration: 400, padding: 0.2 }), 600);
-    return () => clearTimeout(t);
-  }, [fitView]);
 
   return (
     <ReactFlow
