@@ -1,12 +1,66 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TaskMesh</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaskMesh</title>
+  <script src="https://unpkg.com/cytoscape@3.29.2/dist/cytoscape.min.js"></script>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --panel:#121a2b; --text:#dbe4ff; --muted:#7f8ba8; --accent:#6ea8fe; --danger:#ef5350; }
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
+    .app{display:grid;grid-template-columns:280px 1fr 320px;height:100vh}
+    .panel{background:var(--panel);padding:12px;border-right:1px solid #23304f;overflow:auto}.right{border-right:none;border-left:1px solid #23304f}
+    #cy{height:100vh}
+    button,input,select,textarea{width:100%;margin:4px 0;padding:8px;border-radius:8px;background:#1a2540;color:var(--text);border:1px solid #2a3960}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:6px}.small{font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="panel">
+    <h3>TaskMesh</h3>
+    <input id="search" placeholder="Search title/owner/tag" />
+    <select id="filterStatus" multiple size="5"></select>
+    <select id="filterType" multiple size="7"></select>
+    <button id="addNode">Add Node</button>
+    <button id="edgeMode">Add Edge mode: Off</button>
+    <button id="deleteSelected">Delete Selected</button>
+    <button id="reorg">Reorganize Graph</button>
+    <button id="exportBtn">Export .taskmesh.json</button>
+    <input id="importFile" type="file" accept=".json,.taskmesh.json" />
+    <button id="resetDemo">Reset Demo</button>
+  </div>
+  <div id="cy"></div>
+  <div class="panel right"><h3>Inspector</h3><div id="inspector" class="small">Select a node or edge.</div></div>
+</div>
+<script>
+const statuses=['not_started','active','blocked','done','archived']; const types=['task','milestone','decision','risk','blocker','note','deliverable']; const priorities=['low','medium','high','critical']; const edgeTypes=['blocks','enables','depends_on','relates_to','informs','resolves'];
+const demo={nodes:[{data:{id:'n1',title:'Plan launch',description:'Draft milestone plan',type:'milestone',status:'active',priority:'high',owner:'Ava',dueDate:'',tags:'planning'}},{data:{id:'n2',title:'Resolve API risk',description:'Investigate edge cases',type:'risk',status:'blocked',priority:'critical',owner:'Noah',dueDate:'',tags:'risk,api'}},{data:{id:'n3',title:'Write release note',description:'User-facing summary',type:'deliverable',status:'not_started',priority:'medium',owner:'Mia',dueDate:'',tags:'docs'}}],edges:[{data:{id:'e1',source:'n2',target:'n1',type:'blocks',label:'blocks',description:''}},{data:{id:'e2',source:'n1',target:'n3',type:'enables',label:'enables',description:''}}]};
+const key='taskmesh-static-v1'; let state=JSON.parse(localStorage.getItem(key)||'null')||demo; let edgeMode=false; let selected=null;
+const cy=cytoscape({container:document.getElementById('cy'),elements:[...state.nodes,...state.edges],style:[
+{selector:'node',style:{'label':'data(title)','background-color':'#6ea8fe','color':'#eaf0ff','font-size':11,'text-wrap':'wrap','text-max-width':100,'shape':'round-rectangle','padding':'8px','border-width':1,'border-color':'#2a3960'}},
+{selector:'node[status = "blocked"]',style:{'background-color':'#ef5350'}},{selector:'node[status = "done"], node[status = "archived"]',style:{'opacity':0.45}},
+{selector:'edge',style:{'curve-style':'bezier','width':2,'line-color':'#7086b8','target-arrow-shape':'triangle','target-arrow-color':'#7086b8','label':'data(label)','font-size':9,'color':'#b8c6e8'}},
+{selector:'.faded',style:{opacity:0.15}},{selector:'.hilite',style:{'border-width':3,'border-color':'#ffd166','line-color':'#ffd166','target-arrow-color':'#ffd166'}}],layout:{name:'cose',animate:false}});
+function save(){state={nodes:cy.nodes().map(n=>({data:n.data(),position:n.position()})),edges:cy.edges().map(e=>({data:e.data()}))};localStorage.setItem(key,JSON.stringify(state));applyFilters();}
+function options(sel,list){sel.innerHTML='';list.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;o.selected=true;sel.appendChild(o);});}
+options(filterStatus,statuses); options(filterType,types);
+function selectedVals(sel){return [...sel.selectedOptions].map(o=>o.value)}
+function applyFilters(){const q=search.value.toLowerCase(),ss=selectedVals(filterStatus),tt=selectedVals(filterType);cy.nodes().forEach(n=>{const d=n.data();const text=(d.title+' '+d.owner+' '+d.tags).toLowerCase();n.style('display',ss.includes(d.status)&&tt.includes(d.type)&&text.includes(q)?'element':'none')});cy.edges().forEach(e=>{e.style('display',e.source().style('display')==='element'&&e.target().style('display')==='element'?'element':'none')});}
+function formForNode(n){const d=n.data();inspector.innerHTML=`<div class='small'>Node ${n.id()}</div>`+['title','description','owner','dueDate','tags'].map(k=>`<label>${k}<input data-k='${k}' value='${(d[k]||'').replaceAll("'","&#39;")}'></label>`).join('')+`<label>type<select data-k='type'>${types.map(v=>`<option ${d.type===v?'selected':''}>${v}</option>`).join('')}</select></label><label>status<select data-k='status'>${statuses.map(v=>`<option ${d.status===v?'selected':''}>${v}</option>`).join('')}</select></label><label>priority<select data-k='priority'>${priorities.map(v=>`<option ${d.priority===v?'selected':''}>${v}</option>`).join('')}</select></label>`;bindInspector(n);}
+function formForEdge(e){const d=e.data();inspector.innerHTML=`<div class='small'>Edge ${e.id()}</div><label>label<input data-k='label' value='${(d.label||'').replaceAll("'","&#39;")}'></label><label>description<input data-k='description' value='${(d.description||'').replaceAll("'","&#39;")}'></label><label>type<select data-k='type'>${edgeTypes.map(v=>`<option ${d.type===v?'selected':''}>${v}</option>`).join('')}</select></label>`;bindInspector(e);}
+function bindInspector(ele){inspector.querySelectorAll('[data-k]').forEach(i=>i.oninput=()=>{ele.data(i.dataset.k,i.value); if(ele.isEdge()&&i.dataset.k==='label') ele.data('label',i.value); save();});}
+function highlight(node){cy.elements().removeClass('faded hilite'); if(!node) return; const up=node.predecessors(); const down=node.successors(); cy.elements().addClass('faded'); node.removeClass('faded').addClass('hilite'); up.removeClass('faded').addClass('hilite'); down.removeClass('faded').addClass('hilite');}
+cy.on('dragfree add remove data',save); cy.on('select unselect',()=>{selected=cy.$(':selected')[0]||null; if(!selected){inspector.textContent='Select a node or edge.'; highlight(null); return;} if(selected.isNode()){formForNode(selected);highlight(selected);} else {formForEdge(selected); highlight(null);}});
+addNode.onclick=()=>{const id='n'+Date.now();cy.add({group:'nodes',data:{id,title:'New item',description:'',type:'task',status:'not_started',priority:'medium',owner:'',dueDate:'',tags:''},position:{x:120+Math.random()*250,y:120+Math.random()*250}});};
+edgeMode.onclick=()=>{edgeMode.dataset.on=edgeMode.dataset.on==='1'?'0':'1';edgeMode.textContent='Add Edge mode: '+(edgeMode.dataset.on==='1'?'On':'Off');edgeModeOn=edgeMode.dataset.on==='1';}; let edgeModeOn=false,firstNode=null;
+cy.on('tap','node',e=>{if(!edgeModeOn)return; if(!firstNode){firstNode=e.target; return;} if(firstNode.id()!==e.target.id()){const id='e'+Date.now();cy.add({group:'edges',data:{id,source:firstNode.id(),target:e.target.id(),type:'relates_to',label:'relates_to',description:''}});} firstNode=null;});
+deleteSelected.onclick=()=>{cy.$(':selected').remove();save();}; reorg.onclick=()=>cy.layout({name:'cose',animate:true}).run();
+search.oninput=applyFilters; filterStatus.onchange=applyFilters; filterType.onchange=applyFilters;
+exportBtn.onclick=()=>{save();const b=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='project.taskmesh.json';a.click();};
+importFile.onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{const p=JSON.parse(t);cy.elements().remove();cy.add([...p.nodes,...p.edges]);cy.layout({name:'preset'}).run();save();});};
+resetDemo.onclick=()=>{cy.elements().remove();cy.add([...demo.nodes,...demo.edges]);cy.layout({name:'cose',animate:false}).run();save();};
+applyFilters();
+</script>
+</body>
 </html>
